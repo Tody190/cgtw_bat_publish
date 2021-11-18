@@ -27,15 +27,13 @@ import traceback
 from PySide2 import QtWidgets
 from PySide2 import QtCore
 from PySide2 import QtGui
+
 QtWidgets.QApplication.addLibraryPath(CGTW_ROOT + u"/bin/lib/pyside/PySide2/plugins")
 
 import cgtw2
 import ct_lib
 from ctlib import file as ct_file
 from com_message_box import *
-
-
-ACTION = u"filebox_bulk_upload_to_filebox"
 
 
 class VersionFilesInfo():
@@ -544,6 +542,17 @@ class CGTWWapper(cgtw2.tw):
         self.w_pipeline_id = self.client.get_sys_key(u"pipeline_id")
         self.w_id = self.client.get_id()
 
+    def w_get_task_info(self):
+        return self.task.get(db=self.w_database,
+                             module=self.w_module,
+                             id_list=self.w_id,
+                             field_sign_list=["seq.entity",
+                                              "shot.entity",
+                                              "pipeline.entity",
+                                              "task.entity",
+                                              "task.artist"
+                                              ])
+
     def w_get_filebox_data(self):
         filebox_data = self.filebox.get(db=self.w_database,
                                         module=self.w_module,
@@ -572,47 +581,140 @@ class CGTWWapper(cgtw2.tw):
 
         return self.send_local_http(self.w_database,
                                     self.w_module,
-                                    ACTION,
+                                    u"filebox_bulk_upload_to_filebox",
                                     t_dict,
-                                    "get")
+                                    u"get")
+
+    def w_drop(self, filebox_id, path_list):
+        t_dic = {
+            "db": self.w_database,
+            "module_type": self.w_module_type,
+            "task_id": self.w_id[0],
+            "filebox_data": {"#id": filebox_id},
+            "path_list": path_list
+        }
+        self.send_local_http(self.w_database,
+                             self.w_module,
+                             "api_drop",
+                             t_dic)
 
     def w_refresh(self):
         self.client.refresh_all(self.w_database, self.w_module, self.w_module_type)
 
 
+class FileDialog(QtWidgets.QFileDialog):
+    def __init__(self, *args):
+        super(FileDialog, self).__init__(*args)
+        self.setOption(self.DontUseNativeDialog, True)
+        self.setFileMode(self.ExistingFiles)
+        btns = self.findChildren(QtWidgets.QPushButton)
+        self.openBtn = [x for x in btns if 'open' in str(x.text()).lower()][0]
+        self.openBtn.clicked.disconnect()
+        self.openBtn.clicked.connect(self.openClicked)
+        self.tree = self.findChild(QtWidgets.QTreeView)
+
+    def openClicked(self):
+        inds = self.tree.selectionModel().selectedIndexes()
+        files = []
+        for i in inds:
+            if i.column() == 0:
+                files.append(os.path.join(str(self.directory().absolutePath()), str(i.data())))
+                print(i.data())
+        self.selectedFiles = files
+        self.hide()
+
+    def filesSelected(self):
+        return self.selectedFiles
+
+
 class MainUI(QtWidgets.QDialog):
-    progress_value = QtCore.Signal(int)
-    progress_title = QtCore.Signal(str)
+    progress_set_value_sig = QtCore.Signal(int)
+    progress_set_title_sig = QtCore.Signal(str)
+    add_row_info_sig = QtCore.Signal(str, str)
+    add_row_pub_button_sig = QtCore.Signal(str, str, str, str)
+
     def __init__(self):
         super(MainUI, self).__init__()
-        self.setWindowTitle(u"等待....")
-        icon_file = os.path.join(os.path.dirname(__file__), "pub_icon.png")
+        self.setWindowTitle(u"正在读取任务....")
+        icon_file = os.path.join(os.path.dirname(__file__), u"pub_icon.png")
         self.setWindowIcon(QtGui.QIcon(icon_file))
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(500)
 
-        self.main_layout = QtWidgets.QHBoxLayout(self)
+        self.main_layout = QtWidgets.QVBoxLayout(self)
         self.pub_progress_bar = QtWidgets.QProgressBar()
+        self.label_layout = QtWidgets.QVBoxLayout()
+        self.main_layout.addLayout(self.label_layout)
         self.main_layout.addWidget(self.pub_progress_bar)
 
         # 连接
-        self.progress_value.connect(self.pub_progress_bar.setValue)
-        self.progress_title.connect(self.setWindowTitle)
+        self.progress_set_value_sig.connect(self.pub_progress_bar.setValue)
+        self.progress_set_title_sig.connect(self.setWindowTitle)
+        self.add_row_info_sig.connect(self._add_row_info)
+        self.add_row_pub_button_sig.connect(self._add_row_pub_button)
 
     def set_range(self, minimum, maximum):
         self.pub_progress_bar.setRange(minimum, maximum)
 
     def set_value(self, value):
-        self.progress_value.emit(value)
+        self.progress_set_value_sig.emit(value)
 
     def set_title(self, text):
-        self.progress_title.emit(text)
+        self.progress_set_title_sig.emit(text)
+
+    def user_pub_dialog(self, filebox_id, start_path):
+        # fileName_choose, filetype = QtWidgets.QFileDialog.getSaveFileName(self,
+        #                                                         u"选取要提交的文件",
+        #                                                         start_path)
+        pub_dialog = FileDialog()
+        pub_dialog.openClicked()
+        if pub_dialog.exec_():
+            print(pub_dialog.selectedFiles())
+
+    def _add_row_info(self, title, info):
+        """
+        添加一行布局，显示当前提交信息
+        """
+        # 标题
+        title_label = QtWidgets.QLabel(u"%s >>> " % title)
+        # 内容
+        info_label = QtWidgets.QLabel(info)
+        row_layout = QtWidgets.QHBoxLayout()
+
+        row_layout.addWidget(title_label)
+        row_layout.addWidget(info_label)
+        row_layout.addStretch()
+        self.label_layout.addLayout(row_layout)
+
+        return row_layout
+
+    def add_row_info(self, title, info):
+        self.add_row_info_sig.emit(title, info)
+
+    def _add_row_pub_button(self, title, info, filebox_id, start_path):
+        """
+          添加一行布局，显示当前提交信息，以及一个按钮用于手动提交
+          """
+        row_layout = self._add_row_info(title, info)
+        # 按钮
+        pub_button = QtWidgets.QPushButton(u"手动上传")
+        pub_button.filebox_id = filebox_id
+        pub_button.start_path = start_path
+        pub_button.clicked.connect(lambda: self.user_pub_dialog(pub_button.filebox_id,
+                                                                pub_button.start_path))
+        row_layout.insertWidget(1, pub_button)
+
+    def add_row_pub_button(self, title, info, filebox_id, start_path):
+        self.add_row_pub_button_sig.emit(title, info, filebox_id, start_path)
 
 
 class Response(MainUI):
     INSTANCE = None
+
     def __init__(self):
         super(Response, self).__init__()
         self.cgtww = CGTWWapper()
+
+        user_pub_button_map = {}  # 手动提交控件与文件筐数据的映射表
 
     def filter_data(self, filebox_data_list, pub_sign):
         """
@@ -642,41 +744,73 @@ class Response(MainUI):
 
         return new_filebox_data
 
+    def add_user_pub_button(self, title, rls, filebox_id, filebox_path):
+        """
+        添加一个手动上传的控件
+        title: 前面显示的标题
+        rls: 最后显示提示内容
+        filebox_data: 用于获取启示路径
+        """
+        # 获取启示路径
+        # 如果路径不存在就获取上一级
+        # 知道层级只剩最后一级时，跳出循环
+        start_path = filebox_path.replace(u"\\", u"/")
+        while not os.path.isdir(start_path):
+            start_path = os.path.dirname(start_path)
+            if len(start_path.split(u"/")) <= 2:
+                break
+        self.add_row_pub_button(title, rls, filebox_id, start_path)
+
     def pub(self):
+        # 设置标题
+        try:
+            task_info = self.cgtww.w_get_task_info()[0]
+            self.set_title(u"{seq}/{shot}/{pipeline}/{task}/{artist}".format(seq=task_info[u"seq.entity"],
+                                                                             shot=task_info[u"shot.entity"],
+                                                                             pipeline=task_info[u"pipeline.entity"],
+                                                                             task=task_info[u"task.entity"],
+                                                                             artist=task_info[u"task.artist"]))
+        except:
+            pass
         # 获取所有 filebox 数据
         filebox_data_list = self.cgtww.w_get_filebox_data()
         if not filebox_data_list:
-            self.set_title(u"没有获取提交框'")
+            self.add_label(u"没有获取提交框'")
             return
         # 获取 pub_sign 参数
         pub_sign = self.cgtww.client.get_argv_key(u"pub_sign")
         if not pub_sign:
-            self.set_title(u'未设置提交标识')
+            self.add_label(u'未设置提交标识')
             return
         # 筛选数据
         filebox_data_list = self.filter_data(filebox_data_list, pub_sign)
         if not filebox_data_list:
-            self.set_title(u'未获取到指定标识的提交框')
+            self.add_label(u'未获取到指定标识的提交框')
 
         # 设置进度条最大最小值
         self.set_range(0, len(filebox_data_list))
 
         progress_bar_value = 1
         for fd in filebox_data_list:
-            self.set_title(fd.get(u"title"))
-            try:
-                # 获取提交信息
-                CFI = VersionFilesInfo(a_tw=self.cgtww,
-                                       a_database=self.cgtww.w_database,
-                                       a_module=self.cgtww.w_module,
-                                       a_module_type=self.cgtww.w_module,
-                                       a_id_list=self.cgtww.w_id,
-                                       a_filebox_id=fd.get(u"#id"),
-                                       a_func=self.cgtww.task)
-                # 提交
-                self.cgtww.w_pub(CFI.get())
-            except Exception as e:
-                pass
+            # 获取提交信息
+            CFI = VersionFilesInfo(a_tw=self.cgtww,
+                                   a_database=self.cgtww.w_database,
+                                   a_module=self.cgtww.w_module,
+                                   a_module_type=self.cgtww.w_module,
+                                   a_id_list=self.cgtww.w_id,
+                                   a_filebox_id=fd.get(u"#id"),
+                                   a_func=self.cgtww.task)
+            # 提交
+            pub_data = CFI.get()
+            fd = pub_data.get(u"filebox_data")  # CFI.get() 包含更多filebox信息
+            rls = self.cgtww.w_pub(pub_data)
+            if str(rls) == u"True":
+                self.add_row_info(fd.get(u"title"), u"成功")
+            else:
+                if not rls:
+                    self.add_user_pub_button(fd.get(u"title"), u"", fd[u"#id"], fd[u"path"])
+                else:
+                    self.add_user_pub_button(fd.get(u"title"), rls, fd[u"#id"], fd[u"path"])
 
             # 进度条+1
             self.set_value(progress_bar_value)
@@ -684,7 +818,6 @@ class Response(MainUI):
 
         # 刷新
         self.cgtww.w_refresh()
-        self.set_title(u'完成')
 
     def _pub(self):
         _thread.start_new_thread(self.pub, ())
@@ -703,6 +836,14 @@ class Response(MainUI):
         sys.exit(app.exec_())
 
 
+def user_drop():
+    w_tw = CGTWWapper()
+    filebox_data_list = w_tw.w_get_filebox_data()
+    for fd in filebox_data_list:
+        fd_sign = fd["sign"]
+        if fd_sign == "pub_project":
+            w_tw.w_drop(fd, ["D:/xx/ffffff.nk"])
+
 if __name__ == u"__main__":
     Response.start()
-
+    #user_drop()
