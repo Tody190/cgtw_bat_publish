@@ -3,6 +3,8 @@
 # time: 2021/11/12
 """
 一件提交所有与 pub 标识开头的提交框
+文件必须符合命名规范，且在提交目录底下
+如果获取不到文件，会提供用户手动提交的方式
 """
 import copy
 import pprint
@@ -586,16 +588,19 @@ class CGTWWapper(cgtw2.tw):
                                     u"get")
 
     def w_drop(self, filebox_id, path_list):
+        if not path_list:
+            return
+
         t_dic = {
-            "db": self.w_database,
-            "module_type": self.w_module_type,
-            "task_id": self.w_id[0],
-            "filebox_data": {"#id": filebox_id},
-            "path_list": path_list
+            u"db": self.w_database,
+            u"module_type": self.w_module_type,
+            u"task_id": self.w_id[0],
+            u"filebox_data": {u"#id": filebox_id},
+            u"path_list": path_list
         }
         self.send_local_http(self.w_database,
                              self.w_module,
-                             "api_drop",
+                             u"api_drop",
                              t_dic)
 
     def w_refresh(self):
@@ -606,36 +611,37 @@ class FileDialog(QtWidgets.QFileDialog):
     def __init__(self, *args):
         super(FileDialog, self).__init__(*args)
         self.setOption(self.DontUseNativeDialog, True)
-        self.setFileMode(self.ExistingFiles)
         btns = self.findChildren(QtWidgets.QPushButton)
-        self.openBtn = [x for x in btns if 'open' in str(x.text()).lower()][0]
-        self.openBtn.clicked.disconnect()
-        self.openBtn.clicked.connect(self.openClicked)
+        self.open_btn = [btn for btn in btns if u'open' in str(btn.text()).lower()][0]
+        self.open_btn.clicked.disconnect()
+        self.open_btn.clicked.connect(self.__open_clicked)
         self.tree = self.findChild(QtWidgets.QTreeView)
 
-    def openClicked(self):
+        self.files = []
+
+    def __open_clicked(self):
         inds = self.tree.selectionModel().selectedIndexes()
-        files = []
+        self.files = []
         for i in inds:
             if i.column() == 0:
-                files.append(os.path.join(str(self.directory().absolutePath()), str(i.data())))
-                print(i.data())
-        self.selectedFiles = files
+                self.files.append(str(self.directory().absolutePath()).replace(u"\\", u"/") +
+                                  u"/" +
+                                  str(i.data()).replace(u"\\", u"/"))
         self.hide()
 
-    def filesSelected(self):
-        return self.selectedFiles
+    @classmethod
+    def get_files_and_dirs(cls, *args):
+        dialog = cls(*args)
+        dialog.setFileMode(dialog.ExistingFiles)
+        dialog.exec_()
+        return dialog.files
 
 
 class MainUI(QtWidgets.QDialog):
-    progress_set_value_sig = QtCore.Signal(int)
-    progress_set_title_sig = QtCore.Signal(str)
-    add_row_info_sig = QtCore.Signal(str, str)
-    add_row_pub_button_sig = QtCore.Signal(str, str, str, str)
+    user_selected_files = QtCore.Signal(str, list)
 
     def __init__(self):
         super(MainUI, self).__init__()
-        self.setWindowTitle(u"正在读取任务....")
         icon_file = os.path.join(os.path.dirname(__file__), u"pub_icon.png")
         self.setWindowIcon(QtGui.QIcon(icon_file))
         self.setMinimumWidth(500)
@@ -646,75 +652,64 @@ class MainUI(QtWidgets.QDialog):
         self.main_layout.addLayout(self.label_layout)
         self.main_layout.addWidget(self.pub_progress_bar)
 
-        # 连接
-        self.progress_set_value_sig.connect(self.pub_progress_bar.setValue)
-        self.progress_set_title_sig.connect(self.setWindowTitle)
-        self.add_row_info_sig.connect(self._add_row_info)
-        self.add_row_pub_button_sig.connect(self._add_row_pub_button)
-
     def set_range(self, minimum, maximum):
         self.pub_progress_bar.setRange(minimum, maximum)
 
     def set_value(self, value):
-        self.progress_set_value_sig.emit(value)
-
-    def set_title(self, text):
-        self.progress_set_title_sig.emit(text)
+        self.pub_progress_bar.setValue(value)
 
     def user_pub_dialog(self, filebox_id, start_path):
-        # fileName_choose, filetype = QtWidgets.QFileDialog.getSaveFileName(self,
-        #                                                         u"选取要提交的文件",
-        #                                                         start_path)
-        pub_dialog = FileDialog()
-        pub_dialog.openClicked()
-        if pub_dialog.exec_():
-            print(pub_dialog.selectedFiles())
+        files = FileDialog.get_files_and_dirs(self,
+                                              u"请选择要提交的文件或者文件夹",
+                                              start_path)
+        self.user_selected_files.emit(filebox_id, files)
+        return files
 
-    def _add_row_info(self, title, info):
-        """
-        添加一行布局，显示当前提交信息
-        """
-        # 标题
-        title_label = QtWidgets.QLabel(u"%s >>> " % title)
-        # 内容
-        info_label = QtWidgets.QLabel(info)
-        row_layout = QtWidgets.QHBoxLayout()
+    def add_info(self, text):
+        self.label_layout.addWidget(QtWidgets.QLabel(text))
 
-        row_layout.addWidget(title_label)
-        row_layout.addWidget(info_label)
-        row_layout.addStretch()
-        self.label_layout.addLayout(row_layout)
-
-        return row_layout
-
-    def add_row_info(self, title, info):
-        self.add_row_info_sig.emit(title, info)
-
-    def _add_row_pub_button(self, title, info, filebox_id, start_path):
+    def add_pub_button(self, filebox_id, start_path, info):
         """
           添加一行布局，显示当前提交信息，以及一个按钮用于手动提交
           """
-        row_layout = self._add_row_info(title, info)
         # 按钮
-        pub_button = QtWidgets.QPushButton(u"手动上传")
+        pub_button = QtWidgets.QPushButton(u"手动提交")
         pub_button.filebox_id = filebox_id
         pub_button.start_path = start_path
         pub_button.clicked.connect(lambda: self.user_pub_dialog(pub_button.filebox_id,
                                                                 pub_button.start_path))
-        row_layout.insertWidget(1, pub_button)
+        # 信息
+        info_label = QtWidgets.QLabel(info)
 
-    def add_row_pub_button(self, title, info, filebox_id, start_path):
-        self.add_row_pub_button_sig.emit(title, info, filebox_id, start_path)
+        row_layout = QtWidgets.QHBoxLayout()
+        row_layout.addWidget(pub_button)
+        row_layout.addWidget(info_label)
+        row_layout.addStretch()
+        self.label_layout.addLayout(row_layout)
 
 
 class Response(MainUI):
     INSTANCE = None
 
+    mainui_set_title = QtCore.Signal(str)
+    progress_set_range = QtCore.Signal(int, int)
+    progress_set_value = QtCore.Signal(int)
+    mainui_add_info = QtCore.Signal(str)
+    mainui_add_pub_button = QtCore.Signal(str, str, str)
+
     def __init__(self):
         super(Response, self).__init__()
         self.cgtww = CGTWWapper()
 
-        user_pub_button_map = {}  # 手动提交控件与文件筐数据的映射表
+        self.__setup_connect()
+
+    def __setup_connect(self):
+        self.mainui_set_title.connect(self.setWindowTitle)
+        self.progress_set_range.connect(self.set_range)
+        self.progress_set_value.connect(self.set_value)
+        self.mainui_add_info.connect(self.add_info)
+        self.mainui_add_pub_button.connect(self.add_pub_button)
+        self.user_selected_files.connect(self.cgtww.w_drop)
 
     def filter_data(self, filebox_data_list, pub_sign):
         """
@@ -744,51 +739,54 @@ class Response(MainUI):
 
         return new_filebox_data
 
-    def add_user_pub_button(self, title, rls, filebox_id, filebox_path):
+    def get_start_path(self, path):
         """
-        添加一个手动上传的控件
-        title: 前面显示的标题
-        rls: 最后显示提示内容
-        filebox_data: 用于获取启示路径
+        一直切割路径直到找到一个存在的根路径
         """
         # 获取启示路径
         # 如果路径不存在就获取上一级
         # 知道层级只剩最后一级时，跳出循环
-        start_path = filebox_path.replace(u"\\", u"/")
+        start_path = path.replace(u"\\", u"/")
         while not os.path.isdir(start_path):
             start_path = os.path.dirname(start_path)
             if len(start_path.split(u"/")) <= 2:
                 break
-        self.add_row_pub_button(title, rls, filebox_id, start_path)
+        return start_path
 
     def pub(self):
         # 设置标题
+        self.mainui_set_title.emit(u"正在读取任务....")
         try:
             task_info = self.cgtww.w_get_task_info()[0]
-            self.set_title(u"{seq}/{shot}/{pipeline}/{task}/{artist}".format(seq=task_info[u"seq.entity"],
-                                                                             shot=task_info[u"shot.entity"],
-                                                                             pipeline=task_info[u"pipeline.entity"],
-                                                                             task=task_info[u"task.entity"],
-                                                                             artist=task_info[u"task.artist"]))
-        except:
-            pass
+            self.mainui_set_title.emit(
+                u"{seq}/{shot}/{pipeline}/{task}/{artist}".format(seq=task_info[u"seq.entity"],
+                                                                  shot=task_info[u"shot.entity"],
+                                                                  pipeline=task_info[
+                                                                      u"pipeline.entity"],
+                                                                  task=task_info[u"task.entity"],
+                                                                  artist=task_info[
+                                                                      u"task.artist"])
+            )
+        except Exception as e:
+            self.mainui_set_title.emit(e)
         # 获取所有 filebox 数据
         filebox_data_list = self.cgtww.w_get_filebox_data()
         if not filebox_data_list:
-            self.add_label(u"没有获取提交框'")
+            self.mainui_add_info.emit(u"没有获取提交框'")
             return
         # 获取 pub_sign 参数
         pub_sign = self.cgtww.client.get_argv_key(u"pub_sign")
         if not pub_sign:
-            self.add_label(u'未设置提交标识')
+            self.mainui_add_info.emit(u'未设置提交标识')
             return
         # 筛选数据
         filebox_data_list = self.filter_data(filebox_data_list, pub_sign)
         if not filebox_data_list:
-            self.add_label(u'未获取到指定标识的提交框')
+            self.mainui_add_info.emit(u'未获取到指定标识的提交框')
+            return
 
         # 设置进度条最大最小值
-        self.set_range(0, len(filebox_data_list))
+        self.progress_set_range.emit(0, len(filebox_data_list))
 
         progress_bar_value = 1
         for fd in filebox_data_list:
@@ -802,18 +800,33 @@ class Response(MainUI):
                                    a_func=self.cgtww.task)
             # 提交
             pub_data = CFI.get()
-            fd = pub_data.get(u"filebox_data")  # CFI.get() 包含更多filebox信息
+            filebox_data = pub_data.get(u"filebox_data")  # CFI.get() 包含更多filebox信息
             rls = self.cgtww.w_pub(pub_data)
-            if str(rls) == u"True":
-                self.add_row_info(fd.get(u"title"), u"成功")
+            if isinstance(rls, bool) and rls:
+                self.mainui_add_pub_button.emit(filebox_data[u"#id"],
+                                                self.get_start_path(filebox_data[u"path"]),
+                                                u"%s >> %s >> %s" % (filebox_data.get(u"title"),
+                                                                     pub_data.get(u"version"),
+                                                                     u"提交成功")
+                                                )
             else:
                 if not rls:
-                    self.add_user_pub_button(fd.get(u"title"), u"", fd[u"#id"], fd[u"path"])
+                    self.mainui_add_pub_button.emit(filebox_data[u"#id"],
+                                                    self.get_start_path(filebox_data[u"path"]),
+                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
+                                                                         pub_data.get(u"version"),
+                                                                         u"未检测到需要提交的文件")
+                                                    )
                 else:
-                    self.add_user_pub_button(fd.get(u"title"), rls, fd[u"#id"], fd[u"path"])
+                    self.mainui_add_pub_button.emit(filebox_data[u"#id"],
+                                                    self.get_start_path(filebox_data[u"path"]),
+                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
+                                                                         pub_data.get(u"version"),
+                                                                         rls)
+                                                    )
 
             # 进度条+1
-            self.set_value(progress_bar_value)
+            self.progress_set_value.emit(progress_bar_value)
             progress_bar_value += 1
 
         # 刷新
@@ -835,15 +848,11 @@ class Response(MainUI):
         cls.INSTANCE._pub()
         sys.exit(app.exec_())
 
+    def closeEvent(self, event):
+        self.cgtww.w_refresh()
+        event.accept()
 
-def user_drop():
-    w_tw = CGTWWapper()
-    filebox_data_list = w_tw.w_get_filebox_data()
-    for fd in filebox_data_list:
-        fd_sign = fd["sign"]
-        if fd_sign == "pub_project":
-            w_tw.w_drop(fd, ["D:/xx/ffffff.nk"])
 
 if __name__ == u"__main__":
     Response.start()
-    #user_drop()
+    # user_drop()
