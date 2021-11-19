@@ -642,6 +642,11 @@ class MainUI(QtWidgets.QDialog):
 
     def __init__(self):
         super(MainUI, self).__init__()
+        self.__setup_ui()
+
+        self.__user_pub_buttons = []  # 所有生成的手动提交按钮
+
+    def __setup_ui(self):
         icon_file = os.path.join(os.path.dirname(__file__), u"pub_icon.png")
         self.setWindowIcon(QtGui.QIcon(icon_file))
         self.setMinimumWidth(500)
@@ -657,6 +662,10 @@ class MainUI(QtWidgets.QDialog):
 
     def set_value(self, value):
         self.pub_progress_bar.setValue(value)
+
+    def set_user_pub_buttons_enabled(self):
+        for btn in self.__user_pub_buttons:
+            btn.setEnabled(True)
 
     def user_pub_dialog(self, filebox_id, start_path):
         files = FileDialog.get_files_and_dirs(self,
@@ -674,6 +683,9 @@ class MainUI(QtWidgets.QDialog):
           """
         # 按钮
         pub_button = QtWidgets.QPushButton(u"手动提交")
+        pub_button.setEnabled(False)
+        self.__user_pub_buttons.append(pub_button)  # 将按钮保存
+
         pub_button.filebox_id = filebox_id
         pub_button.start_path = start_path
         pub_button.clicked.connect(lambda: self.user_pub_dialog(pub_button.filebox_id,
@@ -831,6 +843,7 @@ class Response(MainUI):
 
         # 刷新
         self.cgtww.w_refresh()
+        self.set_user_pub_buttons_enabled()
 
     def _pub(self):
         _thread.start_new_thread(self.pub, ())
