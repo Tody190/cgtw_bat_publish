@@ -10,8 +10,7 @@ import copy
 import pprint
 import sys
 import os
-import time
-import _thread
+import threading
 
 plugin_file = u"C:/CgTeamWork_v6.2/bin/CGTW_Bat_Publish/cgtw_bat_publish.py"
 CGTW_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(plugin_file)))  # C:/CgTeamWork_v6.2
@@ -663,11 +662,15 @@ class MainUI(QtWidgets.QDialog):
     def set_value(self, value):
         self.pub_progress_bar.setValue(value)
 
-    def set_user_pub_buttons_enabled(self):
+    def set_user_pub_buttons_enabled(self, bool):
         for btn in self.__user_pub_buttons:
-            btn.setEnabled(True)
+            btn.setEnabled(bool)
 
     def user_pub_dialog(self, filebox_id, start_path):
+        # for btn in self.__user_pub_buttons:
+        #     if btn.filebox_id == filebox_id:
+        #         btn.setText(u"等待")
+
         files = FileDialog.get_files_and_dirs(self,
                                               u"请选择要提交的文件或者文件夹",
                                               start_path)
@@ -677,7 +680,7 @@ class MainUI(QtWidgets.QDialog):
     def add_info(self, text):
         self.label_layout.addWidget(QtWidgets.QLabel(text))
 
-    def add_pub_button(self, filebox_id, start_path, info):
+    def add_pub_button(self, filebox_id, start_path, info, info_color=u""):
         """
           添加一行布局，显示当前提交信息，以及一个按钮用于手动提交
           """
@@ -692,10 +695,14 @@ class MainUI(QtWidgets.QDialog):
                                                                 pub_button.start_path))
         # 信息
         info_label = QtWidgets.QLabel(info)
+        # 设置文字颜色
+        if info_label:
+            info_label.setStyleSheet("color: %s" % info_color)
 
         row_layout = QtWidgets.QHBoxLayout()
         row_layout.addWidget(pub_button)
         row_layout.addWidget(info_label)
+
         row_layout.addStretch()
         self.label_layout.addLayout(row_layout)
 
@@ -707,7 +714,8 @@ class Response(MainUI):
     progress_set_range = QtCore.Signal(int, int)
     progress_set_value = QtCore.Signal(int)
     mainui_add_info = QtCore.Signal(str)
-    mainui_add_pub_button = QtCore.Signal(str, str, str)
+    mainui_add_pub_button = QtCore.Signal(str, str, str, str)
+    mainui_pub_buttons_enabled = QtCore.Signal(bool)
 
     def __init__(self):
         super(Response, self).__init__()
@@ -722,6 +730,7 @@ class Response(MainUI):
         self.mainui_add_info.connect(self.add_info)
         self.mainui_add_pub_button.connect(self.add_pub_button)
         self.user_selected_files.connect(self.cgtww.w_drop)
+        self.mainui_pub_buttons_enabled.connect(self.set_user_pub_buttons_enabled)
 
     def filter_data(self, filebox_data_list, pub_sign):
         """
@@ -819,7 +828,8 @@ class Response(MainUI):
                                                 self.get_start_path(filebox_data[u"path"]),
                                                 u"%s >> %s >> %s" % (filebox_data.get(u"title"),
                                                                      pub_data.get(u"version"),
-                                                                     u"提交成功")
+                                                                     u"提交成功"),
+                                                u"Green"
                                                 )
             else:
                 if not rls:
@@ -827,14 +837,16 @@ class Response(MainUI):
                                                     self.get_start_path(filebox_data[u"path"]),
                                                     u"%s >> %s >> %s" % (filebox_data.get(u"title"),
                                                                          pub_data.get(u"version"),
-                                                                         u"未检测到需要提交的文件")
+                                                                         u"未检测到需要提交的文件"),
+                                                    u"Red"
                                                     )
                 else:
                     self.mainui_add_pub_button.emit(filebox_data[u"#id"],
                                                     self.get_start_path(filebox_data[u"path"]),
                                                     u"%s >> %s >> %s" % (filebox_data.get(u"title"),
                                                                          pub_data.get(u"version"),
-                                                                         rls)
+                                                                         rls),
+                                                    u"Red"
                                                     )
 
             # 进度条+1
@@ -843,10 +855,11 @@ class Response(MainUI):
 
         # 刷新
         self.cgtww.w_refresh()
-        self.set_user_pub_buttons_enabled()
+        self.mainui_pub_buttons_enabled.emit(True)
 
     def _pub(self):
-        _thread.start_new_thread(self.pub, ())
+        pub_threading = threading.Thread(target=self.pub, args=())
+        pub_threading.start()
 
     @classmethod
     def start(cls):
