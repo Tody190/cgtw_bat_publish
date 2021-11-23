@@ -579,6 +579,7 @@ class CGTWWapper(cgtw2.tw):
                   "file_path_list": t_upload_list,
                   'des_file_path_list': t_online_list,
                   'version': t_version}
+        pprint.pprint(u"bat_pub: %s" % str(t_dict))
 
         return self.send_local_http(self.w_database,
                                     self.w_module,
@@ -597,6 +598,8 @@ class CGTWWapper(cgtw2.tw):
             u"filebox_data": {u"#id": filebox_id},
             u"path_list": path_list
         }
+        pprint.pprint("user_pub: %s" % str(t_dic))
+
         self.send_local_http(self.w_database,
                              self.w_module,
                              u"api_drop",
@@ -826,26 +829,23 @@ class Response(MainUI):
             if isinstance(rls, bool) and rls:
                 self.mainui_add_pub_button.emit(filebox_data[u"#id"],
                                                 self.get_start_path(filebox_data[u"path"]),
-                                                u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                     pub_data.get(u"version"),
-                                                                     u"提交成功"),
+                                                u"%s >> %s" % (filebox_data.get(u"title"),
+                                                               u"提交成功"),
                                                 u"Green"
                                                 )
             else:
                 if not rls:
                     self.mainui_add_pub_button.emit(filebox_data[u"#id"],
                                                     self.get_start_path(filebox_data[u"path"]),
-                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                         pub_data.get(u"version"),
-                                                                         u"未检测到需要提交的文件"),
+                                                    u"%s >>  %s" % (filebox_data.get(u"title"),
+                                                                    u"未检测到需要提交的文件"),
                                                     u"Red"
                                                     )
                 else:
                     self.mainui_add_pub_button.emit(filebox_data[u"#id"],
                                                     self.get_start_path(filebox_data[u"path"]),
-                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                         pub_data.get(u"version"),
-                                                                         rls),
+                                                    u"%s >> %s" % (filebox_data.get(u"title"),
+                                                                   rls),
                                                     u"Red"
                                                     )
 
@@ -881,4 +881,3 @@ class Response(MainUI):
 
 if __name__ == u"__main__":
     Response.start()
-    # user_drop()
