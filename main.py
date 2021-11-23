@@ -636,6 +636,30 @@ class FileDialog(QtWidgets.QFileDialog):
         return dialog.files
 
 
+class RowWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super(RowWidget, self).__init__()
+        """
+          添加一行布局，显示当前提交信息，以及一个按钮用于手动提交
+          """
+        # 按钮
+        self.button = QtWidgets.QPushButton(u"手动提交")
+        self.button.setEnabled(False)
+        # 标题
+        self.title = QtWidgets.QLabel()
+        # step
+        self.__step = QtWidgets.QLabel(u" >> ")
+        # 信息
+        self.info = QtWidgets.QLabel()
+
+        row_layout = QtWidgets.QHBoxLayout(self)
+        row_layout.addWidget(self.button)
+        row_layout.addWidget(self.title)
+        row_layout.addWidget(self.__step)
+        row_layout.addWidget(self.info)
+        row_layout.addStretch()
+
+
 class MainUI(QtWidgets.QDialog):
     user_selected_files = QtCore.Signal(str, list)
 
@@ -643,7 +667,7 @@ class MainUI(QtWidgets.QDialog):
         super(MainUI, self).__init__()
         self.__setup_ui()
 
-        self.__user_pub_buttons = []  # 所有生成的手动提交按钮
+        self.__row_widgets = {}  # {filebox_id: RowWidget}
 
     def __setup_ui(self):
         icon_file = os.path.join(os.path.dirname(__file__), u"pub_icon.png")
@@ -663,8 +687,14 @@ class MainUI(QtWidgets.QDialog):
         self.pub_progress_bar.setValue(value)
 
     def set_user_pub_buttons_enabled(self, bool):
-        for btn in self.__user_pub_buttons:
-            btn.setEnabled(bool)
+        """
+        启用所有用户提交按钮
+        """
+        for rw in self.__row_widgets.values():
+            rw.button.setEnabled(bool)
+
+    def get_row_widget(self, filebox_id):
+        return self.__row_widgets.get(filebox_id)
 
     def user_pub_dialog(self, filebox_id, start_path):
         # for btn in self.__user_pub_buttons:
@@ -680,31 +710,32 @@ class MainUI(QtWidgets.QDialog):
     def add_info(self, text):
         self.label_layout.addWidget(QtWidgets.QLabel(text))
 
-    def add_pub_button(self, filebox_id, start_path, info, info_color=u""):
+    def set_row_widget_info(self, filebox_id, title=u"", info=u"", info_color=u""):
+        row_widget = self.__row_widgets.get(filebox_id)
+        if title:
+            row_widget.title.setText(title)
+        if info:
+            row_widget.info.setText(info)
+        # 设置文字颜色
+        if info_color:
+            row_widget.info.setStyleSheet(u"color: %s" % info_color)
+
+    def add_row_widget(self, filebox_id, start_path, title, info, info_color=u""):
         """
           添加一行布局，显示当前提交信息，以及一个按钮用于手动提交
           """
         # 按钮
-        pub_button = QtWidgets.QPushButton(u"手动提交")
-        pub_button.setEnabled(False)
-        self.__user_pub_buttons.append(pub_button)  # 将按钮保存
+        RW = RowWidget()
+        RW.filebox_id = filebox_id
+        RW.start_path = start_path
+        RW.button.clicked.connect(lambda: self.user_pub_dialog(RW.filebox_id,
+                                                               RW.start_path))
 
-        pub_button.filebox_id = filebox_id
-        pub_button.start_path = start_path
-        pub_button.clicked.connect(lambda: self.user_pub_dialog(pub_button.filebox_id,
-                                                                pub_button.start_path))
-        # 信息
-        info_label = QtWidgets.QLabel(info)
-        # 设置文字颜色
-        if info_label:
-            info_label.setStyleSheet("color: %s" % info_color)
+        self.__row_widgets[filebox_id] = RW
 
-        row_layout = QtWidgets.QHBoxLayout()
-        row_layout.addWidget(pub_button)
-        row_layout.addWidget(info_label)
+        self.set_row_widget_info(filebox_id, title, info, info_color)
 
-        row_layout.addStretch()
-        self.label_layout.addLayout(row_layout)
+        self.label_layout.addWidget(RW)
 
 
 class Response(MainUI):
@@ -714,7 +745,7 @@ class Response(MainUI):
     progress_set_range = QtCore.Signal(int, int)
     progress_set_value = QtCore.Signal(int)
     mainui_add_info = QtCore.Signal(str)
-    mainui_add_pub_button = QtCore.Signal(str, str, str, str)
+    mainui_row_widget = QtCore.Signal(str, str, str, str, str)
     mainui_pub_buttons_enabled = QtCore.Signal(bool)
 
     def __init__(self):
@@ -728,8 +759,8 @@ class Response(MainUI):
         self.progress_set_range.connect(self.set_range)
         self.progress_set_value.connect(self.set_value)
         self.mainui_add_info.connect(self.add_info)
-        self.mainui_add_pub_button.connect(self.add_pub_button)
-        self.user_selected_files.connect(self.cgtww.w_drop)
+        self.mainui_row_widget.connect(self.add_row_widget)
+        self.user_selected_files.connect(self.user_pub)
         self.mainui_pub_buttons_enabled.connect(self.set_user_pub_buttons_enabled)
 
     def filter_data(self, filebox_data_list, pub_sign):
@@ -773,6 +804,12 @@ class Response(MainUI):
             if len(start_path.split(u"/")) <= 2:
                 break
         return start_path
+
+    def user_pub(self, filebox_id, start_path):
+        self.cgtww.w_drop(filebox_id, start_path)
+        self.set_row_widget_info(filebox_id=filebox_id,
+                                 info=u"用户已手动提交",
+                                 info_color=u"Blue")
 
     def pub(self):
         # 设置标题
@@ -824,30 +861,28 @@ class Response(MainUI):
             filebox_data = pub_data.get(u"filebox_data")  # CFI.get() 包含更多filebox信息
             rls = self.cgtww.w_pub(pub_data)
             if isinstance(rls, bool) and rls:
-                self.mainui_add_pub_button.emit(filebox_data[u"#id"],
+                self.mainui_row_widget.emit(filebox_data[u"#id"],
+                                            self.get_start_path(filebox_data[u"path"]),
+                                            filebox_data.get(u"title"),
+                                            u"提交成功",
+                                            u"Green"
+                                            )
+            else:
+                if not rls:
+                    self.mainui_row_widget.emit(filebox_data[u"#id"],
+                                                self.get_start_path(filebox_data[u"path"]),
+                                                filebox_data.get(u"title"),
+                                                u"未检测到需要提交的文件",
+                                                u"Red"
+                                                )
+                else:
+                    self.mainui_row_widget.emit(filebox_data[u"#id"],
                                                 self.get_start_path(filebox_data[u"path"]),
                                                 u"%s >> %s >> %s" % (filebox_data.get(u"title"),
                                                                      pub_data.get(u"version"),
-                                                                     u"提交成功"),
-                                                u"Green"
+                                                                     rls),
+                                                u"Red"
                                                 )
-            else:
-                if not rls:
-                    self.mainui_add_pub_button.emit(filebox_data[u"#id"],
-                                                    self.get_start_path(filebox_data[u"path"]),
-                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                         pub_data.get(u"version"),
-                                                                         u"未检测到需要提交的文件"),
-                                                    u"Red"
-                                                    )
-                else:
-                    self.mainui_add_pub_button.emit(filebox_data[u"#id"],
-                                                    self.get_start_path(filebox_data[u"path"]),
-                                                    u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                         pub_data.get(u"version"),
-                                                                         rls),
-                                                    u"Red"
-                                                    )
 
             # 进度条+1
             self.progress_set_value.emit(progress_bar_value)
