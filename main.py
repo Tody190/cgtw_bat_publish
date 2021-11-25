@@ -7,7 +7,6 @@
 如果获取不到文件，会提供用户手动提交的方式
 """
 
-
 import pprint
 import sys
 import os
@@ -15,7 +14,7 @@ import traceback
 import copy
 import threading
 
-#__file__ = r"C:\CgTeamWork_v6.2\bin\ext_plugin\Cgtw_Bat_Publish\main.py"
+__file__ = r"C:\CgTeamWork_v6.2\bin\ext_plugin\Cgtw_Bat_Publish\main.py"
 CGTW_ROOT_BIN = __file__.replace(u"\\", u"/").split(u"ext_plugin")[0]
 for _path in [
     CGTW_ROOT_BIN + u"base",
@@ -30,6 +29,7 @@ for _path in [
 from PySide2 import QtWidgets
 from PySide2 import QtGui
 from PySide2 import QtCore
+
 QtWidgets.QApplication.addLibraryPath(CGTW_ROOT_BIN + u"lib/pyside/PySide2/plugins/")
 
 import cgtw2
@@ -579,6 +579,7 @@ class CGTWWapper(cgtw2.tw):
                   "file_path_list": t_upload_list,
                   'des_file_path_list': t_online_list,
                   'version': t_version}
+        pprint.pprint(u"bat_pub: %s" % str(t_dict))
 
         return self.send_local_http(self.w_database,
                                     self.w_module,
@@ -597,6 +598,8 @@ class CGTWWapper(cgtw2.tw):
             u"filebox_data": {u"#id": filebox_id},
             u"path_list": path_list
         }
+        pprint.pprint("user_pub: %s" % str(t_dic))
+
         self.send_local_http(self.w_database,
                              self.w_module,
                              u"api_drop",
@@ -878,9 +881,8 @@ class Response(MainUI):
                 else:
                     self.mainui_row_widget.emit(filebox_data[u"#id"],
                                                 self.get_start_path(filebox_data[u"path"]),
-                                                u"%s >> %s >> %s" % (filebox_data.get(u"title"),
-                                                                     pub_data.get(u"version"),
-                                                                     rls),
+                                                u"%s >> %s" % (filebox_data.get(u"title"),
+                                                               rls),
                                                 u"Red"
                                                 )
 
@@ -916,4 +918,3 @@ class Response(MainUI):
 
 if __name__ == u"__main__":
     Response.start()
-    # user_drop()
