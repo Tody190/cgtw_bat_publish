@@ -6,35 +6,35 @@
 文件必须符合命名规范，且在提交目录底下
 如果获取不到文件，会提供用户手动提交的方式
 """
-import copy
+
+
 import pprint
 import sys
 import os
+import traceback
+import copy
 import threading
 
-plugin_file = u"C:/CgTeamWork_v6.2/bin/CGTW_Bat_Publish/cgtw_bat_publish.py"
-CGTW_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(plugin_file)))  # C:/CgTeamWork_v6.2
+#__file__ = r"C:\CgTeamWork_v6.2\bin\ext_plugin\Cgtw_Bat_Publish\main.py"
+CGTW_ROOT_BIN = __file__.replace(u"\\", u"/").split(u"ext_plugin")[0]
 for _path in [
-    CGTW_ROOT + u"/bin/base",
-    CGTW_ROOT + u"/bin/lib/pyside",
-    CGTW_ROOT + u"/bin/cgtw",
-    CGTW_ROOT + u"/bin/base/com_lib",
-    CGTW_ROOT + u"/bin/base/com_icon"
+    CGTW_ROOT_BIN + u"base",
+    CGTW_ROOT_BIN + u"lib/pyside",
+    CGTW_ROOT_BIN + u"cgtw",
+    CGTW_ROOT_BIN + u"base/com_lib",
+    CGTW_ROOT_BIN + u"base/com_icon"
 ]:
     _path in sys.path or sys.path.append(_path)
 
-import traceback
-
+# pyside
 from PySide2 import QtWidgets
-from PySide2 import QtCore
 from PySide2 import QtGui
-
-QtWidgets.QApplication.addLibraryPath(CGTW_ROOT + u"/bin/lib/pyside/PySide2/plugins")
+from PySide2 import QtCore
+QtWidgets.QApplication.addLibraryPath(CGTW_ROOT_BIN + u"lib/pyside/PySide2/plugins/")
 
 import cgtw2
 import ct_lib
 from ctlib import file as ct_file
-from com_message_box import *
 
 
 class VersionFilesInfo():
